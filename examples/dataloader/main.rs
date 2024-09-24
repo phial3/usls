@@ -14,13 +14,14 @@ fn main() -> anyhow::Result<()> {
         .with_i02((0, 640, 640).into())
         .with_i03((0, 640, 640).into())
         .with_confs(&[0.2]);
+
     let mut model = YOLO::new(options)?;
 
     // build dataloader
     let dl = DataLoader::new(
         // "images/bus.jpg",  // remote image
         // "../images", // image folder
-        // "../demo.mp4",   // local video
+        // "assets/detect.mp4",   // local video
         // "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", // remote video
         // "rtsp://admin:xyz@192.168.2.217:554/h265/ch1/",  // rtsp h264 stream
         "./assets/bus.jpg", // local image
@@ -41,7 +42,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // images -> video
-    // DataLoader::is2v("runs/YOLO-DataLoader", &["runs", "is2v"], 24)?;
+    DataLoader::is2v("runs/YOLO-DataLoader", &["runs", "is2v"], 24)?;
 
     Ok(())
 }

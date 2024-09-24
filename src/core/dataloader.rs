@@ -1,18 +1,24 @@
-use anyhow::{anyhow, Result};
+use crate::core::avio_writing;
+use crate::{
+    core::avio, string_now, Dir, Hub, Location, MediaType, CHECK_MARK, CROSS_MARK,
+};
+use anyhow::{anyhow, Context, Error, Result};
 use image::DynamicImage;
 use indicatif::{ProgressBar, ProgressStyle};
+use rsmpeg::{
+    avcodec::AVCodecContext,
+    avformat::AVFormatContextInput,
+    avutil::{AVFrame, AVFrameWithImage, AVImage, AVRational},
+    ffi::{self, AVFormatContext, AVInputFormat},
+    swscale::SwsContext,
+};
 use std::collections::VecDeque;
+use std::ffi::CString;
 use std::path::{Path, PathBuf};
+use std::ptr::NonNull;
+use std::sync::atomic::AtomicI64;
 use std::sync::mpsc;
-use video_rs::{
-    encode::{Encoder, Settings},
-    time::Time,
-    Decoder, Url,
-};
 
-use crate::{
-    build_progress_bar, string_now, Dir, Hub, Location, MediaType, CHECK_MARK, CROSS_MARK,
-};
 
 type TempReturnType = (Vec<DynamicImage>, Vec<PathBuf>);
 
@@ -52,13 +58,13 @@ impl IntoIterator for DataLoader {
 
     fn into_iter(self) -> Self::IntoIter {
         let progress_bar = if self.with_pb {
-            build_progress_bar(
+            crate::build_progress_bar(
                 self.nf / self.batch_size as u64,
                 "   Iterating",
                 Some(&format!("{:?}", self.media_type)),
                 crate::PROGRESS_BAR_STYLE_CYAN_2,
             )
-            .ok()
+                .ok()
         } else {
             None
         };
@@ -91,7 +97,7 @@ pub struct DataLoader {
     receiver: mpsc::Receiver<TempReturnType>,
 
     /// Video decoder for handling video or stream data.
-    decoder: Option<video_rs::decode::Decoder>,
+    decoder: Option<avio::Decoder>,
 
     /// Number of images or frames; `u64::MAX` is used for live streams (indicating no limit).
     nf: u64,
@@ -144,24 +150,8 @@ impl DataLoader {
             anyhow::bail!("Could not locate the source path: {:?}", source_path);
         }
 
-        // video decoder
-        let decoder = match &media_type {
-            MediaType::Video(Location::Local) => Some(Decoder::new(source_path)?),
-            MediaType::Video(Location::Remote) | MediaType::Stream => {
-                let location: video_rs::location::Location = source.parse::<Url>()?.into();
-                Some(Decoder::new(location)?)
-            }
-            _ => None,
-        };
-
-        // video & stream frames
-        if let Some(decoder) = &decoder {
-            nf = match decoder.frames() {
-                Err(_) => u64::MAX,
-                Ok(0) => u64::MAX,
-                Ok(x) => x,
-            }
-        }
+        // decoder
+        let decoder = avio::Decoder::new(source)?;
 
         // summary
         tracing::info!("{} Found {:?} x{}", CHECK_MARK, media_type, nf,);
@@ -172,7 +162,7 @@ impl DataLoader {
             bound: 50,
             receiver: mpsc::sync_channel(1).1,
             batch_size: 1,
-            decoder,
+            decoder: Some(decoder),
             nf,
             with_pb: true,
         })
@@ -214,7 +204,7 @@ impl DataLoader {
         mut data: VecDeque<PathBuf>,
         batch_size: usize,
         media_type: MediaType,
-        mut decoder: Option<video_rs::decode::Decoder>,
+        mut decoder: Option<avio::Decoder>,
     ) {
         let span = tracing::span!(tracing::Level::INFO, "DataLoader-producer-thread");
         let _guard = span.enter();
@@ -236,8 +226,8 @@ impl DataLoader {
                     }
                     if yis.len() == batch_size
                         && sender
-                            .send((std::mem::take(&mut yis), std::mem::take(&mut yps)))
-                            .is_err()
+                        .send((std::mem::take(&mut yis), std::mem::take(&mut yps)))
+                        .is_err()
                     {
                         break;
                     }
@@ -245,34 +235,22 @@ impl DataLoader {
             }
             MediaType::Video(_) | MediaType::Stream => {
                 if let Some(decoder) = decoder.as_mut() {
-                    let (w, h) = decoder.size();
-                    let frames = decoder.decode_iter();
-
-                    for frame in frames {
-                        match frame {
-                            Ok((ts, frame)) => {
-                                let rgb8: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-                                    match image::ImageBuffer::from_raw(
-                                        w as _,
-                                        h as _,
-                                        frame.into_raw_vec_and_offset().0,
-                                    ) {
-                                        Some(x) => x,
-                                        None => continue,
-                                    };
-                                let img = image::DynamicImage::from(rgb8);
+                    match decoder.decode_frames() {
+                        Ok(images) => {
+                            for img in images {
                                 yis.push(img);
-                                yps.push(ts.to_string().into());
+                                // TODO: Adjust based on timestamp or other identifiers
+                                yps.push(PathBuf::new());
 
-                                if yis.len() == batch_size
-                                    && sender
-                                        .send((std::mem::take(&mut yis), std::mem::take(&mut yps)))
-                                        .is_err()
+                                if yis.len() == batch_size &&
+                                    sender.send((std::mem::take(&mut yis), std::mem::take(&mut yps))).is_err()
                                 {
                                     break;
                                 }
                             }
-                            Err(_) => break,
+                        }
+                        Err(err) => {
+                            tracing::warn!("Error decoding frames: {:?}", err);
                         }
                     }
                 }
@@ -360,50 +338,119 @@ impl DataLoader {
         if paths.is_empty() {
             anyhow::bail!("No images found.");
         }
-        let mut encoder = None;
-        let mut position = Time::zero();
+
         let saveout = Dir::Currnet
             .raw_path_with_subs(subs)?
             .join(format!("{}.mp4", string_now("-")));
-        let pb = build_progress_bar(
+        let saveout = saveout.to_string_lossy().to_string();
+
+        let pb = crate::build_progress_bar(
             paths.len() as u64,
             "  Converting",
             Some(&format!("{:?}", MediaType::Video(Location::Local))),
             crate::PROGRESS_BAR_STYLE_CYAN_2,
         )?;
 
+        let image0 = Self::read_into_rgb8(paths[0].clone())?;
+        let (width, height) = image0.dimensions();
+        let (mut output_format_context, mut encode_context) = avio::open_output_file_custom(
+            CString::new(saveout.clone()).unwrap().as_c_str(),
+            width as i32,
+            height as i32,
+            AVRational { num: 16, den: 9 },
+            AVRational { num: fps as i32, den: 1 },
+            1,
+        )?;
+
+        // 定义输出格式
+        let src_format = ffi::AV_PIX_FMT_RGB24;
+        let dst_format = ffi::AV_PIX_FMT_YUV420P;
+
+        let mut frame_pts = AtomicI64::new(1);
         // loop
         for path in paths {
             pb.inc(1);
-            let img = Self::read_into_rgb8(path)?;
-            let (w, h) = img.dimensions();
 
-            // build encoder at the 1st time
-            if encoder.is_none() {
-                let settings = Settings::preset_h264_yuv420p(w as _, h as _, false);
-                encoder = Some(Encoder::new(saveout.clone(), settings)?);
+            // 1. 读取图片 -> RGB 数据
+            let rgb_img = Self::read_into_rgb8(path)?;
+            let (w, h) = rgb_img.dimensions();
+
+            // 2. 创建源 AVFrame，并分配缓冲区
+            let mut src_frame = AVFrame::new();
+            src_frame.set_width(w as i32);
+            src_frame.set_height(h as i32);
+            src_frame.set_format(src_format);
+            src_frame.set_pts(frame_pts.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            src_frame.alloc_buffer()?;
+
+            // 3. 将 image 的 RGB 数据拷贝到 src_frame 中
+            let rgb_data = rgb_img.into_raw();
+            let data_arr = ndarray::Array3::from_shape_vec((h as usize, w as usize, 3), rgb_data)
+                .expect("Failed to create ndarray from raw image data");
+            unsafe {
+                let buffer_slice = std::slice::from_raw_parts_mut(src_frame.data[0], data_arr.len());
+                buffer_slice.copy_from_slice(data_arr.as_slice().expect("Failed to get ndarray::Array3 as slice"));
             }
 
-            // write video
-            if let Some(encoder) = encoder.as_mut() {
-                let raw_data = img.into_raw();
-                let frame = ndarray::Array3::from_shape_vec((h as usize, w as usize, 3), raw_data)
-                    .expect("Failed to create ndarray from raw image data");
+            // 4. 创建目标 AVFrame (YUV420P 格式)
+            let mut dst_frame = AVFrame::new();
+            dst_frame.set_width(w as i32);
+            dst_frame.set_height(h as i32);
+            dst_frame.set_format(dst_format);
+            dst_frame.alloc_buffer()?;
 
-                // encode and update
-                encoder.encode(&frame, position)?;
-                position = position.aligned_with(Time::from_nth_of_a_second(fps)).add();
+            // 5. 创建 sws_context
+            let mut sws_context = SwsContext::get_context(
+                w as i32,
+                h as i32,
+                src_format,
+                w as i32,
+                h as i32,
+                dst_format,
+                ffi::SWS_BILINEAR | ffi::SWS_PRINT_INFO,
+                None,
+                None,
+                None,
+            ).context("Failed to create SwsContext")?;
+
+
+            // 6. 执行 sws_context.scale 转换
+            unsafe {
+                let src_stride = &src_frame.linesize[0] as *const i32; // 源图像的每行步幅
+                let dst_stride = &dst_frame.linesize[0] as *const i32; // 目标图像的每行步幅
+
+                // 使用 scale 函数进行图像转换 (RGB -> YUV420P)
+                sws_context.scale(
+                    src_frame.data.as_ptr() as *const *const u8,  // 源图像数据
+                    src_stride,                                   // 源图像每行步幅
+                    0,                                  // 开始处理的行
+                    h as i32,                                     // 要处理的行数
+                    dst_frame.data.as_ptr() as *const *mut u8,    // 目标图像数据
+                    dst_stride,                                   // 目标图像每行步幅
+                )?;
+                // let _ = sws_context.scale_frame(&src_frame, w as i32, h as i32, &mut dst_frame)?;
             }
+
+            // pts
+            dst_frame.set_pts(src_frame.pts);
+
+            avio_writing::encode_write_frame(
+                Some(&dst_frame),
+                &mut encode_context,
+                &mut output_format_context,
+                0,
+            )?;
+
+            println!("Image conversion successful!");
         }
 
-        match &mut encoder {
-            Some(vencoder) => vencoder.finish()?,
-            None => anyhow::bail!("Found no video encoder."),
-        }
+        // Flush the encoder by pushing EOF frame to encode_context.
+        avio_writing::flush_encoder(&mut encode_context, &mut output_format_context, 0)?;
+        output_format_context.write_trailer()?;
 
         // update
         pb.set_prefix("   Converted");
-        pb.set_message(saveout.to_str().unwrap_or_default().to_string());
+        pb.set_message(saveout.clone());
         pb.set_style(ProgressStyle::with_template(
             crate::PROGRESS_BAR_STYLE_FINISH_4,
         )?);
