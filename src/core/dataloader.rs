@@ -150,7 +150,15 @@ impl DataLoader {
             anyhow::bail!("Could not locate the source path: {:?}", source_path);
         }
 
-        // decoder
+        // video decoder
+        // let decoder = match &media_type {
+        //     MediaType::Video(Location::Local) => Some(rio::avio::Decoder::new(source_path)?),
+        //     MediaType::Video(Location::Remote) | MediaType::Stream => {
+        //         let location: video_rs::location::Location = source.parse::<Url>()?.into();
+        //         Some(rio::avio::Decoder::new(location)?)
+        //     }
+        //     _ => None,
+        // };
         let decoder = rio::avio::Decoder::new(source)?;
 
         // summary

@@ -22,7 +22,7 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    pub fn new(source: &str) -> Result<Self, anyhow::Error> {
+    pub fn new(source: &str) -> Result<Self> {
         let (stream_idx, input_format_context, decode_context) = open_input_file(CString::new(source).unwrap().as_c_str())?;
         Ok(Decoder {
             stream_index: stream_idx,
