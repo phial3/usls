@@ -42,7 +42,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // images -> video
-    DataLoader::is2v("runs/YOLO-DataLoader", &["runs", "is2v"], 24)?;
+    DataLoader::is2v("runs/YOLO-DataLoader", &["runs", "is2v"], 25)?;
 
     Ok(())
 }

@@ -361,8 +361,6 @@ impl DataLoader {
             AVRational { num: fps as i32, den: 1 },
             1,
         )?;
-        // FIXME: set metadata
-        encode_context.set_time_base(AVRational { num: 1, den: 1000 });
 
         let mut frame_pts = AtomicI64::new(1);
         // loop
@@ -378,7 +376,7 @@ impl DataLoader {
 
             // save frame to image
             let now_time = chrono::Local::now().format("%Y%m%d_%H%M%S_%f").to_string();
-            avio::save_avframe_yuv420p(&frame, w as i32, h as i32, &format!("{}/frame_{}.jpg", "/tmp", now_time))?;
+            avio::save_avframe_yuv420p(&frame, w as i32, h as i32, &format!("{}/frame_{}.jpg", "/tmp/save", now_time))?;
 
             avio_writing::encode_write_frame(
                 Some(&frame),

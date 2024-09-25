@@ -259,7 +259,7 @@ pub fn open_output_file_custom(
     encode_context.set_pix_fmt(if let Some(pix_fmts) = encoder.pix_fmts() {
         pix_fmts[0]
     } else {
-        ffi::AV_PIX_FMT_RGB24
+        ffi::AV_PIX_FMT_YUV420P
     });
 
     encode_context.set_time_base(avutil::av_inv_q(avutil::av_mul_q(
@@ -331,12 +331,12 @@ pub fn rgb_image_to_avframe_yuv420p(image: &RgbImage, frame_pts: i64) -> AVFrame
     src_frame.alloc_buffer().unwrap();
 
     // 3. 将 image 的 RGB 数据拷贝到 src_frame 中
-    let rgb_data = image.clone().into_raw();
-    let data_arr = ndarray::Array3::from_shape_vec((height as usize, width as usize, 3), rgb_data)
-        .expect("Failed to create ndarray from raw image data");
+    // let data_arr = ndarray::Array3::from_shape_vec((height as usize, width as usize, 3), image.into_raw())
+    //     .expect("Failed to create ndarray from raw image data");
     unsafe {
-        let buffer_slice = std::slice::from_raw_parts_mut(src_frame.data[0], data_arr.len());
-        buffer_slice.copy_from_slice(data_arr.as_slice().expect("Failed to get ndarray::Array3 as slice"));
+        let rgb_data = image.as_raw();
+        let buffer_slice = std::slice::from_raw_parts_mut(src_frame.data[0], rgb_data.len());
+        buffer_slice.copy_from_slice(rgb_data);
     }
 
     // 4. 创建目标 AVFrame (YUV420P 格式)
@@ -374,6 +374,7 @@ pub fn rgb_image_to_avframe_yuv420p(image: &RgbImage, frame_pts: i64) -> AVFrame
             dst_frame.data.as_ptr() as *const *mut u8,    // 目标图像数据
             dst_stride,                                   // 目标图像每行步幅
         ).unwrap();
+
         // TODO: error handling
         // let _ = sws_context.scale_frame(&src_frame, w as i32, h as i32, &mut dst_frame)?;
     }
