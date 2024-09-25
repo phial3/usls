@@ -44,7 +44,7 @@ pub fn avio_reading(file_path: &CStr) -> Result<()> {
             frame.set_pts(frame.best_effort_timestamp);
             // save frame to image
             // avio::pgm_save(&frame, &format!("{}/frame{}.ppm", "/tmp/frames/", frame_index.fetch_add(1, atomic::Ordering::SeqCst)))?
-            avio::save_image(
+            avio::save_avframe_yuv420p(
                 &frame,
                 frame.width,
                 frame.height,
@@ -53,8 +53,7 @@ pub fn avio_reading(file_path: &CStr) -> Result<()> {
                     "/tmp/",
                     frame_index.fetch_add(1, atomic::Ordering::SeqCst)
                 ),
-            )
-            .unwrap()
+            )?
         }
     }
 

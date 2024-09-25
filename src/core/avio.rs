@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Context};
-use image::{DynamicImage, ImageBuffer, Rgb};
+use anyhow::{anyhow, Context, Result};
+use image::{DynamicImage, ImageBuffer, Rgb, RgbImage};
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};
 use rsmpeg::avformat::{
     AVFormatContextInput, AVFormatContextOutput, AVIOContextContainer, AVIOContextCustom,
@@ -314,12 +314,82 @@ pub fn pgm_save(frame: &AVFrame, filename: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn save_image(
+// 将 RgbImage 转换为 AVFrame
+pub fn rgb_image_to_avframe_yuv420p(image: &RgbImage, frame_pts: i64) -> AVFrame {
+    let (width, height) = image.dimensions();
+
+    // 定义输出格式
+    let src_format = ffi::AV_PIX_FMT_RGB24;
+    let dst_format = ffi::AV_PIX_FMT_YUV420P;
+
+    // 2. 创建源 AVFrame，并分配缓冲区
+    let mut src_frame = AVFrame::new();
+    src_frame.set_width(width as i32);
+    src_frame.set_height(height as i32);
+    src_frame.set_format(src_format);
+    src_frame.set_pts(frame_pts);
+    src_frame.alloc_buffer().unwrap();
+
+    // 3. 将 image 的 RGB 数据拷贝到 src_frame 中
+    let rgb_data = image.clone().into_raw();
+    let data_arr = ndarray::Array3::from_shape_vec((height as usize, width as usize, 3), rgb_data)
+        .expect("Failed to create ndarray from raw image data");
+    unsafe {
+        let buffer_slice = std::slice::from_raw_parts_mut(src_frame.data[0], data_arr.len());
+        buffer_slice.copy_from_slice(data_arr.as_slice().expect("Failed to get ndarray::Array3 as slice"));
+    }
+
+    // 4. 创建目标 AVFrame (YUV420P 格式)
+    let mut dst_frame = AVFrame::new();
+    dst_frame.set_width(width as i32);
+    dst_frame.set_height(height as i32);
+    dst_frame.set_format(dst_format);
+    dst_frame.alloc_buffer().unwrap();
+
+    // 5. 创建 sws_context
+    let mut sws_context = SwsContext::get_context(
+        width as i32,
+        height as i32,
+        src_format,
+        width as i32,
+        height as i32,
+        dst_format,
+        ffi::SWS_BILINEAR | ffi::SWS_PRINT_INFO,
+        None,
+        None,
+        None,
+    ).context("Failed to create SwsContext").unwrap();
+
+    // 6. 执行 sws_context.scale 转换
+    unsafe {
+        let src_stride = &src_frame.linesize[0] as *const i32; // 源图像的每行步幅
+        let dst_stride = &dst_frame.linesize[0] as *const i32; // 目标图像的每行步幅
+
+        // 使用 scale 函数进行图像转换 (RGB -> YUV420P)
+        let _ = sws_context.scale(
+            src_frame.data.as_ptr() as *const *const u8,  // 源图像数据
+            src_stride,                                   // 源图像每行步幅
+            0,                                  // 开始处理的行
+            height as i32,                                // 要处理的行数
+            dst_frame.data.as_ptr() as *const *mut u8,    // 目标图像数据
+            dst_stride,                                   // 目标图像每行步幅
+        ).unwrap();
+        // TODO: error handling
+        // let _ = sws_context.scale_frame(&src_frame, w as i32, h as i32, &mut dst_frame)?;
+    }
+
+    // pts
+    dst_frame.set_pts(src_frame.pts);
+
+    dst_frame
+}
+
+pub fn save_avframe_yuv420p(
     frame: &AVFrame,
     width: i32,
     height: i32,
     output_file_name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     // 创建转换上下文，将帧转换为 RGB 格式
     let mut sws_ctx = SwsContext::get_context(
         width,
@@ -328,7 +398,7 @@ pub fn save_image(
         width,
         height,
         ffi::AV_PIX_FMT_RGB24,
-        ffi::SWS_BILINEAR,
+        ffi::SWS_BILINEAR | ffi::SWS_PRINT_INFO,
         None,
         None,
         None,
@@ -354,8 +424,9 @@ pub fn save_image(
     }
 
     // 从 RGB 数据创建图像缓冲区
-    let data =
-        unsafe { std::slice::from_raw_parts(rgb_frame.data[0], (width * height * 3) as usize) };
+    let data = unsafe {
+        std::slice::from_raw_parts(rgb_frame.data[0], (width * height * 3) as usize)
+    };
 
     let buffer: ImageBuffer<Rgb<u8>, _> =
         ImageBuffer::from_raw(width as u32, height as u32, data).ok_or(RsmpegError::Unknown)?;
@@ -376,5 +447,11 @@ pub fn save_image(
         _ => return Err(RsmpegError::Unknown.into()),
     }
 
+    println!("Image saved to {}", output_file_name);
+
     Ok(())
 }
+
+// pub fn save_avframe_rgb24(frame: &AVFrame, output_file_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+//
+// }

@@ -362,10 +362,6 @@ impl DataLoader {
             1,
         )?;
 
-        // 定义输出格式
-        let src_format = ffi::AV_PIX_FMT_RGB24;
-        let dst_format = ffi::AV_PIX_FMT_YUV420P;
-
         let mut frame_pts = AtomicI64::new(1);
         // loop
         for path in paths {
@@ -375,73 +371,18 @@ impl DataLoader {
             let rgb_img = Self::read_into_rgb8(path)?;
             let (w, h) = rgb_img.dimensions();
 
-            // 2. 创建源 AVFrame，并分配缓冲区
-            let mut src_frame = AVFrame::new();
-            src_frame.set_width(w as i32);
-            src_frame.set_height(h as i32);
-            src_frame.set_format(src_format);
-            src_frame.set_pts(frame_pts.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
-            src_frame.alloc_buffer()?;
-
-            // 3. 将 image 的 RGB 数据拷贝到 src_frame 中
-            let rgb_data = rgb_img.into_raw();
-            let data_arr = ndarray::Array3::from_shape_vec((h as usize, w as usize, 3), rgb_data)
-                .expect("Failed to create ndarray from raw image data");
-            unsafe {
-                let buffer_slice = std::slice::from_raw_parts_mut(src_frame.data[0], data_arr.len());
-                buffer_slice.copy_from_slice(data_arr.as_slice().expect("Failed to get ndarray::Array3 as slice"));
-            }
-
-            // 4. 创建目标 AVFrame (YUV420P 格式)
-            let mut dst_frame = AVFrame::new();
-            dst_frame.set_width(w as i32);
-            dst_frame.set_height(h as i32);
-            dst_frame.set_format(dst_format);
-            dst_frame.alloc_buffer()?;
-
-            // 5. 创建 sws_context
-            let mut sws_context = SwsContext::get_context(
-                w as i32,
-                h as i32,
-                src_format,
-                w as i32,
-                h as i32,
-                dst_format,
-                ffi::SWS_BILINEAR | ffi::SWS_PRINT_INFO,
-                None,
-                None,
-                None,
-            ).context("Failed to create SwsContext")?;
-
-
-            // 6. 执行 sws_context.scale 转换
-            unsafe {
-                let src_stride = &src_frame.linesize[0] as *const i32; // 源图像的每行步幅
-                let dst_stride = &dst_frame.linesize[0] as *const i32; // 目标图像的每行步幅
-
-                // 使用 scale 函数进行图像转换 (RGB -> YUV420P)
-                sws_context.scale(
-                    src_frame.data.as_ptr() as *const *const u8,  // 源图像数据
-                    src_stride,                                   // 源图像每行步幅
-                    0,                                  // 开始处理的行
-                    h as i32,                                     // 要处理的行数
-                    dst_frame.data.as_ptr() as *const *mut u8,    // 目标图像数据
-                    dst_stride,                                   // 目标图像每行步幅
-                )?;
-                // let _ = sws_context.scale_frame(&src_frame, w as i32, h as i32, &mut dst_frame)?;
-            }
-
-            // pts
-            dst_frame.set_pts(src_frame.pts);
+            // 2. 转换格式
+            let frame = avio::rgb_image_to_avframe_yuv420p(&rgb_img, frame_pts.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            let now_time = chrono::Local::now().format("%Y%m%d_%H%M%S_%f").to_string();
+            // save frame to image
+            avio::save_avframe_yuv420p(&frame, w as i32, h as i32, &format!("{}/frame_{}.jpg", "/tmp", now_time))?;
 
             avio_writing::encode_write_frame(
-                Some(&dst_frame),
+                Some(&frame),
                 &mut encode_context,
                 &mut output_format_context,
                 0,
             )?;
-
-            println!("Image conversion successful!");
         }
 
         // Flush the encoder by pushing EOF frame to encode_context.
