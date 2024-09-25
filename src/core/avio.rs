@@ -31,7 +31,7 @@ impl Decoder {
         })
     }
 
-    pub fn decode_frames(&mut self) -> Result<Vec<DynamicImage>, anyhow::Error> {
+    pub fn decode_frames(&mut self) -> Result<Vec<(AVRational, i64, DynamicImage)>, anyhow::Error> {
         let mut images = Vec::new();
 
         let mut sws_context = SwsContext::get_context(
@@ -58,6 +58,7 @@ impl Decoder {
                     rgb_frame.set_height(self.codec_context.height);
                     rgb_frame.set_time_base(frame.time_base);
                     rgb_frame.set_pict_type(frame.pict_type);
+                    rgb_frame.set_pts(frame.pts);
                     rgb_frame.alloc_buffer()?;
 
                     sws_context.scale_frame(
@@ -68,7 +69,7 @@ impl Decoder {
                     )?;
 
                     let img = self.frame_to_dynamic_image(&rgb_frame)?;
-                    images.push(img);
+                    images.push((rgb_frame.time_base, rgb_frame.pts, img));
                 }
             }
         }

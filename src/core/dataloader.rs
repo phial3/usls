@@ -235,22 +235,15 @@ impl DataLoader {
             }
             MediaType::Video(_) | MediaType::Stream => {
                 if let Some(decoder) = decoder.as_mut() {
-                    match decoder.decode_frames() {
-                        Ok(images) => {
-                            for img in images {
-                                yis.push(img);
-                                // TODO: Adjust based on timestamp or other identifiers
-                                yps.push(PathBuf::new());
+                    let frames = decoder.decode_frames().unwrap();
+                    for (_time_base, pts, img) in frames {
+                        yis.push(img);
+                        yps.push(pts.to_string().into());
 
-                                if yis.len() == batch_size &&
-                                    sender.send((std::mem::take(&mut yis), std::mem::take(&mut yps))).is_err()
-                                {
-                                    break;
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            tracing::warn!("Error decoding frames: {:?}", err);
+                        if yis.len() == batch_size &&
+                            sender.send((std::mem::take(&mut yis), std::mem::take(&mut yps))).is_err()
+                        {
+                            break;
                         }
                     }
                 }
