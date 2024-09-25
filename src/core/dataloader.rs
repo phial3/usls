@@ -1,6 +1,6 @@
-use crate::core::avio_writing;
 use crate::{
-    core::avio, string_now, Dir, Hub, Location, MediaType, CHECK_MARK, CROSS_MARK,
+    rio::{self, avio_writing},
+    Dir, Hub, Location, MediaType, CHECK_MARK, CROSS_MARK
 };
 use anyhow::{anyhow, Context, Error, Result};
 use image::DynamicImage;
@@ -97,7 +97,7 @@ pub struct DataLoader {
     receiver: mpsc::Receiver<TempReturnType>,
 
     /// Video decoder for handling video or stream data.
-    decoder: Option<avio::Decoder>,
+    decoder: Option<rio::avio::Decoder>,
 
     /// Number of images or frames; `u64::MAX` is used for live streams (indicating no limit).
     nf: u64,
@@ -151,7 +151,7 @@ impl DataLoader {
         }
 
         // decoder
-        let decoder = avio::Decoder::new(source)?;
+        let decoder = rio::avio::Decoder::new(source)?;
 
         // summary
         tracing::info!("{} Found {:?} x{}", CHECK_MARK, media_type, nf,);
@@ -204,7 +204,7 @@ impl DataLoader {
         mut data: VecDeque<PathBuf>,
         batch_size: usize,
         media_type: MediaType,
-        mut decoder: Option<avio::Decoder>,
+        mut decoder: Option<rio::avio::Decoder>,
     ) {
         let span = tracing::span!(tracing::Level::INFO, "DataLoader-producer-thread");
         let _guard = span.enter();
@@ -334,7 +334,7 @@ impl DataLoader {
 
         let saveout = Dir::Currnet
             .raw_path_with_subs(subs)?
-            .join(format!("{}.mp4", string_now("-")));
+            .join(format!("{}.mp4", crate::string_now("-")));
         let saveout = saveout.to_string_lossy().to_string();
 
         let pb = crate::build_progress_bar(
@@ -346,7 +346,7 @@ impl DataLoader {
 
         let image0 = Self::read_into_rgb8(paths[0].clone())?;
         let (width, height) = image0.dimensions();
-        let (mut output_format_context, mut encode_context) = avio::open_output_file_custom(
+        let (mut output_format_context, mut encode_context) = rio::avio::open_output_file_custom(
             CString::new(saveout.clone()).unwrap().as_c_str(),
             width as i32,
             height as i32,
@@ -365,11 +365,11 @@ impl DataLoader {
             let (w, h) = rgb_img.dimensions();
 
             // 2. 转换格式
-            let frame = avio::rgb_image_to_avframe_yuv420p(&rgb_img, frame_pts.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            let frame = rio::avio::rgb_image_to_avframe_yuv420p(&rgb_img, frame_pts.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
 
             // save frame to image
             let now_time = chrono::Local::now().format("%Y%m%d_%H%M%S_%f").to_string();
-            avio::save_avframe_yuv420p(&frame, w as i32, h as i32, &format!("{}/frame_{}.jpg", "/tmp/save", now_time))?;
+            rio::avio::save_avframe_yuv420p(&frame, w as i32, h as i32, &format!("{}/frame_{}.jpg", "/tmp/save", now_time))?;
 
             avio_writing::encode_write_frame(
                 Some(&frame),
