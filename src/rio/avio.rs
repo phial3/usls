@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use image::{DynamicImage, ImageBuffer, Rgb, RgbImage};
-use rsmpeg::avcodec::{AVCodec, AVCodecContext};
+use rsmpeg::avcodec::{AVCodec, AVCodecContext, AVPacket};
 use rsmpeg::avformat::{
     AVFormatContextInput, AVFormatContextOutput, AVIOContextContainer, AVIOContextCustom,
 };
@@ -15,10 +15,12 @@ use std::io::{SeekFrom, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+/// multimedia file input decoding
 pub struct Decoder {
     stream_index: usize,
     codec_context: AVCodecContext,
     format_context: AVFormatContextInput,
+    current_packet: Option<AVPacket>,
 }
 
 impl Decoder {
@@ -29,6 +31,7 @@ impl Decoder {
             stream_index: stream_idx,
             codec_context: decode_context,
             format_context: input_format_context,
+            current_packet: None,
         })
     }
 
@@ -38,27 +41,65 @@ impl Decoder {
         Ok((frame_rate.num as f64 / frame_rate.den as f64) as u64)
     }
 
-    pub fn decode_frames(&mut self) -> Result<Vec<(AVRational, i64, DynamicImage)>, anyhow::Error> {
-        let mut images = Vec::new();
+    pub fn decode_iter(&mut self) -> impl Iterator<Item=Result<(i64, DynamicImage), anyhow::Error>> + '_ {
+        std::iter::from_fn(move || {
+            match self.decode_next() {
+                Ok(Some(frame)) => Some(Ok(frame)),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
+            }
+        })
+    }
 
-        let mut sws_context = SwsContext::get_context(
-            self.codec_context.width,
-            self.codec_context.height,
-            ffi::AV_PIX_FMT_YUV420P,
-            self.codec_context.width,
-            self.codec_context.height,
-            ffi::AV_PIX_FMT_RGB24,
-            ffi::SWS_BILINEAR | ffi::SWS_PRINT_INFO,
-            None,
-            None,
-            None,
-        ).context("Failed to create SwsContext")?;
+    fn frame_to_dynamic_image(&self, frame: &AVFrame) -> Result<DynamicImage, anyhow::Error> {
+        let width = frame.width as u32;
+        let height = frame.height as u32;
+        let buffer: Vec<u8> = unsafe {
+            let data_ptr = frame.data[0];
+            let size = (frame.linesize[0] * frame.height) as usize;
+            std::slice::from_raw_parts(data_ptr as *const u8, size).to_vec()
+        };
+        let img = image::ImageBuffer::from_raw(width, height, buffer)
+            .ok_or_else(|| anyhow!("Failed to create image buffer"))?;
+        Ok(DynamicImage::ImageRgb8(img))
+    }
 
-        while let Some(packet) = self.format_context.read_packet()? {
-            if packet.stream_index == self.stream_index as i32 {
-                self.codec_context.send_packet(Some(&packet))?;
+    fn decode_next(&mut self) -> Result<Option<(i64, DynamicImage)>, anyhow::Error> {
+        loop {
+            // 在这里实现解码逻辑
+            if self.current_packet.is_none() {
+                while let Some(packet) = self.format_context.read_packet()? {
+                    if packet.stream_index as usize == self.stream_index {
+                        self.current_packet = Some(packet);
+                        break;
+                    }
+                }
+            }
+
+            println!("decode_next current_packet: {}", self.current_packet.is_some());
+
+            let mut sws_context = SwsContext::get_context(
+                self.codec_context.width,
+                self.codec_context.height,
+                ffi::AV_PIX_FMT_YUV420P,
+                self.codec_context.width,
+                self.codec_context.height,
+                ffi::AV_PIX_FMT_RGB24,
+                ffi::SWS_BILINEAR | ffi::SWS_PRINT_INFO,
+                None,
+                None,
+                None,
+            ).context("Failed to create SwsContext")?;
+
+            if let Some(packet) = self.current_packet.take() {
+                println!("packet pts: {}, dts: {}, duration: {}, size: {}, stream_index: {}",
+                         packet.pts, packet.dts, packet.duration, packet.size, packet.stream_index);
+
+                self.codec_context.send_packet(Some(&packet))
+                    .context("Failed to send packet to codec context")?;
 
                 while let Ok(frame) = self.codec_context.receive_frame() {
+                    // 注意这里的 frame 编码格式为 YUV420P，需要转换为 RGB24
                     let mut rgb_frame = AVFrame::new();
                     rgb_frame.set_format(ffi::AV_PIX_FMT_RGB24);
                     rgb_frame.set_width(self.codec_context.width);
@@ -75,26 +116,17 @@ impl Decoder {
                         &mut rgb_frame,
                     )?;
 
+                    println!("convert frame from yuv420p to rgb24 pts: {}, time_base: {:?}", rgb_frame.pts, rgb_frame.time_base);
                     let img = self.frame_to_dynamic_image(&rgb_frame)?;
-                    images.push((rgb_frame.time_base, rgb_frame.pts, img));
+                    return Ok(Some((frame.pts, img)));
                 }
+            } else {
+                println!("No packet received for stream_index: {}", self.stream_index);
+                break;
             }
         }
 
-        Ok(images)
-    }
-
-    fn frame_to_dynamic_image(&self, frame: &AVFrame) -> Result<DynamicImage, anyhow::Error> {
-        let width = frame.width as u32;
-        let height = frame.height as u32;
-        let buffer: Vec<u8> = unsafe {
-            let data_ptr = frame.data[0];
-            let size = (frame.linesize[0] * frame.height) as usize;
-            std::slice::from_raw_parts(data_ptr as *const u8, size).to_vec()
-        };
-        let img = image::ImageBuffer::from_raw(width, height, buffer)
-            .ok_or_else(|| anyhow!("Failed to create image buffer"))?;
-        Ok(DynamicImage::ImageRgb8(img))
+        Ok(None)
     }
 }
 

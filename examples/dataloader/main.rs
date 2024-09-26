@@ -1,4 +1,4 @@
-use usls::{models::YOLO, Annotator, DataLoader, Options, Vision, YOLOTask, YOLOVersion};
+use usls::{models::YOLO, Annotator, DataLoader, Nms, Options, Vision, YOLOTask, YOLOVersion};
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
         // "./assets/bus.jpg", // local image
         "rtmp://172.24.82.44/live/livestream1"
     )?
-    .with_batch(1)
+    .with_batch(3)
     .build()?;
 
     // build annotator
@@ -39,10 +39,28 @@ fn main() -> anyhow::Result<()> {
     for (xs, _) in dl {
         let ys = model.forward(&xs, false)?;
         annotator.annotate(&xs, &ys);
+        // Retrieve inference results
+        for y in ys {
+            // bboxes
+            if let Some(bboxes) = y.bboxes() {
+                for bbox in bboxes {
+                    println!(
+                        "Bbox: {}, {}, {}, {}, {}, [{}:{}]",
+                        bbox.xmin(),
+                        bbox.ymin(),
+                        bbox.xmax(),
+                        bbox.ymax(),
+                        bbox.confidence(),
+                        bbox.id(),
+                        bbox.name().unwrap().as_str()
+                    );
+                }
+            }
+        }
     }
 
     // images -> video
-    DataLoader::is2v("runs/YOLO-DataLoader", &["runs", "is2v"], 25)?;
+    // DataLoader::is2v("runs/YOLO-DataLoader", &["runs", "is2v"], 25)?;
 
     Ok(())
 }

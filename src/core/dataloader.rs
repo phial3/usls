@@ -249,15 +249,22 @@ impl DataLoader {
             }
             MediaType::Video(_) | MediaType::Stream => {
                 if let Some(decoder) = decoder.as_mut() {
-                    let frames = decoder.decode_frames().unwrap();
-                    for (_time_base, pts, img) in frames {
-                        yis.push(img);
-                        yps.push(pts.to_string().into());
+                    let frames = decoder.decode_iter();
+                    for frame in frames {
+                        match frame {
+                            Ok((ts, img)) => {
+                                yis.push(img);
+                                yps.push(ts.to_string().into());
 
-                        if yis.len() == batch_size &&
-                            sender.send((std::mem::take(&mut yis), std::mem::take(&mut yps))).is_err()
-                        {
-                            break;
+                                if yis.len() == batch_size
+                                    && sender
+                                    .send((std::mem::take(&mut yis), std::mem::take(&mut yps)))
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
                         }
                     }
                 }
