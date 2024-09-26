@@ -24,7 +24,8 @@ fn main() -> anyhow::Result<()> {
         // "assets/detect.mp4",   // local video
         // "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", // remote video
         // "rtsp://admin:xyz@192.168.2.217:554/h265/ch1/",  // rtsp h264 stream
-        "./assets/bus.jpg", // local image
+        // "./assets/bus.jpg", // local image
+        "rtmp://172.24.82.44/live/livestream1"
     )?
     .with_batch(1)
     .build()?;
@@ -36,7 +37,6 @@ fn main() -> anyhow::Result<()> {
 
     // run
     for (xs, _) in dl {
-        // std::thread::sleep(std::time::Duration::from_millis(100));
         let ys = model.forward(&xs, false)?;
         annotator.annotate(&xs, &ys);
     }

@@ -19,7 +19,6 @@ use std::ptr::NonNull;
 use std::sync::atomic::AtomicI64;
 use std::sync::mpsc;
 
-
 type TempReturnType = (Vec<DynamicImage>, Vec<PathBuf>);
 
 pub struct DataLoaderIterator {
@@ -63,8 +62,7 @@ impl IntoIterator for DataLoader {
                 "   Iterating",
                 Some(&format!("{:?}", self.media_type)),
                 crate::PROGRESS_BAR_STYLE_CYAN_2,
-            )
-                .ok()
+            ).ok()
         } else {
             None
         };
@@ -151,15 +149,23 @@ impl DataLoader {
         }
 
         // video decoder
-        // let decoder = match &media_type {
-        //     MediaType::Video(Location::Local) => Some(rio::avio::Decoder::new(source_path)?),
-        //     MediaType::Video(Location::Remote) | MediaType::Stream => {
-        //         let location: video_rs::location::Location = source.parse::<Url>()?.into();
-        //         Some(rio::avio::Decoder::new(location)?)
-        //     }
-        //     _ => None,
-        // };
-        let decoder = rio::avio::Decoder::new(source)?;
+        let decoder = match &media_type {
+            MediaType::Video(Location::Local) => Some(rio::avio::Decoder::new(source_path.to_str().unwrap())?),
+            MediaType::Video(Location::Remote) | MediaType::Stream => {
+                let location = source.parse::<url::Url>()?;
+                Some(rio::avio::Decoder::new(location.as_str())?)
+            }
+            _ => None,
+        };
+
+        // video & stream frames
+        if let Some(decoder) = &decoder {
+            nf = match decoder.get_framerate() {
+                Err(_) => u64::MAX,
+                Ok(0) => u64::MAX,
+                Ok(x) => x,
+            }
+        }
 
         // summary
         tracing::info!("{} Found {:?} x{}", CHECK_MARK, media_type, nf,);
@@ -170,7 +176,7 @@ impl DataLoader {
             bound: 50,
             receiver: mpsc::sync_channel(1).1,
             batch_size: 1,
-            decoder: Some(decoder),
+            decoder,
             nf,
             with_pb: true,
         })

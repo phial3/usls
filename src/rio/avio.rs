@@ -23,12 +23,19 @@ pub struct Decoder {
 
 impl Decoder {
     pub fn new(source: &str) -> Result<Self> {
-        let (stream_idx, input_format_context, decode_context) = open_input_file(CString::new(source).unwrap().as_c_str())?;
+        let (stream_idx, input_format_context, decode_context) =
+            open_input_file(CString::new(source).unwrap().as_c_str())?;
         Ok(Decoder {
             stream_index: stream_idx,
             codec_context: decode_context,
             format_context: input_format_context,
         })
+    }
+
+    pub fn get_framerate(&self) -> Result<u64> {
+        let stream = &self.format_context.streams()[self.stream_index];
+        let frame_rate = stream.guess_framerate().unwrap();
+        Ok((frame_rate.num as f64 / frame_rate.den as f64) as u64)
     }
 
     pub fn decode_frames(&mut self) -> Result<Vec<(AVRational, i64, DynamicImage)>, anyhow::Error> {
@@ -102,6 +109,8 @@ pub fn open_input_file(
         .find_best_stream(ffi::AVMEDIA_TYPE_VIDEO)
         .context("Failed to select a video stream")?
         .context("No video stream")?;
+
+    println!("open_input_file: video_index: {}, decoder: {:?}", video_index, decoder.name().to_str()?);
 
     let decode_context = {
         let input_stream = &input_format_context.streams()[video_index];
