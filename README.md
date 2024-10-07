@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-    | <a href="https://docs.rs/usls"><strong>Documentation</strong></a> |
+    <a href="https://docs.rs/usls"><strong>Documentation</strong></a>
     <br>
     <br>
     <a href='https://github.com/microsoft/onnxruntime/releases'>
@@ -34,7 +34,7 @@
 
 **`usls`** is a Rust library integrated with **ONNXRuntime** that provides a collection of state-of-the-art models for **Computer Vision** and **Vision-Language** tasks, including:
 
-- **YOLO Models**: [YOLOv5](https://github.com/ultralytics/yolov5), [YOLOv6](https://github.com/meituan/YOLOv6), [YOLOv7](https://github.com/WongKinYiu/yolov7), [YOLOv8](https://github.com/ultralytics/ultralytics), [YOLOv9](https://github.com/WongKinYiu/yolov9), [YOLOv10](https://github.com/THU-MIG/yolov10)
+- **YOLO Models**: [YOLOv5](https://github.com/ultralytics/yolov5), [YOLOv6](https://github.com/meituan/YOLOv6), [YOLOv7](https://github.com/WongKinYiu/yolov7), [YOLOv8](https://github.com/ultralytics/ultralytics), [YOLOv9](https://github.com/WongKinYiu/yolov9), [YOLOv10](https://github.com/THU-MIG/yolov10), [YOLOv11](https://github.com/ultralytics/ultralytics)
 - **SAM Models**: [SAM](https://github.com/facebookresearch/segment-anything), [SAM2](https://github.com/facebookresearch/segment-anything-2), [MobileSAM](https://github.com/ChaoningZhang/MobileSAM), [EdgeSAM](https://github.com/chongzhou96/EdgeSAM), [SAM-HQ](https://github.com/SysCV/sam-hq), [FastSAM](https://github.com/CASIA-IVA-Lab/FastSAM)
 - **Vision Models**: [RTDETR](https://arxiv.org/abs/2304.08069), [RTMO](https://github.com/open-mmlab/mmpose/tree/main/projects/rtmo), [DB](https://arxiv.org/abs/1911.08947), [SVTR](https://arxiv.org/abs/2205.00159), [Depth-Anything-v1-v2](https://github.com/LiheYoung/Depth-Anything), [DINOv2](https://github.com/facebookresearch/dinov2), [MODNet](https://github.com/ZHKKKe/MODNet), [Sapiens](https://arxiv.org/abs/2408.12569)
 - **Vision-Language Models**: [CLIP](https://github.com/openai/CLIP), [BLIP](https://arxiv.org/abs/2201.12086), [GroundingDINO](https://github.com/IDEA-Research/GroundingDINO), [YOLO-World](https://github.com/AILab-CVC/YOLO-World), [Florence2](https://arxiv.org/abs/2311.06242)
@@ -50,8 +50,9 @@
 | [YOLOv6](https://github.com/meituan/YOLOv6)                        | Object Detection                                                                             | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
 | [YOLOv7](https://github.com/WongKinYiu/yolov7)                     | Object Detection                                                                             | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
 | [YOLOv8](https://github.com/ultralytics/ultralytics)                | Object Detection<br>Instance Segmentation<br>Classification<br>Oriented Object Detection<br>Keypoint Detection | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
+| [YOLOv8](https://github.com/ultralytics/ultralytics)                | Object Detection<br>Instance Segmentation<br>Classification<br>Oriented Object Detection<br>Keypoint Detection | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
 | [YOLOv9](https://github.com/WongKinYiu/yolov9)                     | Object Detection                                                                             | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
-| [YOLOv10](https://github.com/THU-MIG/yolov10)                      | Object Detection                                                                             | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
+| [YOLOv11](https://github.com/ultralytics/ultralytics)                | Object Detection<br>Instance Segmentation<br>Classification<br>Oriented Object Detection<br>Keypoint Detection | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
 | [RTDETR](https://arxiv.org/abs/2304.08069)                         | Object Detection                                                                             | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
 | [FastSAM](https://github.com/CASIA-IVA-Lab/FastSAM)                 | Instance Segmentation                                                                         | [demo](examples/yolo)      | ✅       | ✅       | ✅           | ✅           |
 | [SAM](https://github.com/facebookresearch/segment-anything)         | Segment Anything                                                                             | [demo](examples/sam)       | ✅       | ✅       |              |              |
@@ -80,7 +81,8 @@
 
 ## ⛳️ ONNXRuntime Linking 
 
-You have two options to link the ONNXRuntime library
+<details>
+<summary>You have two options to link the ONNXRuntime library</summary>
 
 - ### Option 1: Manual Linking
 
@@ -99,6 +101,7 @@ You have two options to link the ONNXRuntime library
   cargo run -r --example yolo --features auto
   ```
 
+</details>
 
 ## 🎈 Demo
 
@@ -118,75 +121,100 @@ cargo run -r --example yolo   # blip, clip, yolop, svtr, db, ...
     [dependencies]
     usls = { git = "https://github.com/jamjamjon/usls", rev = "commit-sha" }
     ```
-    
+
 - #### Follow the pipeline
     - Build model with the provided `models` and `Options`
     - Load images, video and stream with `DataLoader`
     - Do inference
-    - Annotate inference results with `Annotator`
     - Retrieve inference results from `Vec<Y>`
-           
-      ```rust
-        use usls::{models::YOLO, Annotator, DataLoader, Nms, Options, Vision, YOLOTask, YOLOVersion};
+    - Annotate inference results with `Annotator`
+    - Display images and write them to video with `Viewer` 
+
+    <br/>
+    <details>
+    <summary>example code</summary>
     
-        fn main() -> anyhow::Result<()> {
-            // Build model with Options
-            let options = Options::new()
-                .with_trt(0)
-                .with_model("yolo/v8-m-dyn.onnx")?
-                .with_yolo_version(YOLOVersion::V8) // YOLOVersion: V5, V6, V7, V8, V9, V10, RTDETR
-                .with_yolo_task(YOLOTask::Detect) // YOLOTask: Classify, Detect, Pose, Segment, Obb
-                .with_i00((1, 2, 4).into())
-                .with_i02((0, 640, 640).into())
-                .with_i03((0, 640, 640).into())
-                .with_confs(&[0.2]);
-            let mut model = YOLO::new(options)?;
-        
-            // Build DataLoader to load image(s), video, stream
-            let dl = DataLoader::new(
-                // "./assets/bus.jpg", // local image
-                // "images/bus.jpg",  // remote image
-                // "../images-folder",  // local images (from folder)
-                // "../demo.mp4",  // local video
-                // "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",  // online video
-                "rtsp://admin:kkasd1234@192.168.2.217:554/h264/ch1/",  // stream
-            )?
-            .with_batch(2)  // iterate with batch_size = 2
-            .build()?;
-        
-            // Build annotator
-            let annotator = Annotator::new()
-                .with_bboxes_thickness(4)
-                .with_saveout("YOLO-DataLoader");
-        
-            // Run and annotate results
-            for (xs, _) in dl {
-                let ys = model.forward(&xs, false)?;
-                annotator.annotate(&xs, &ys);
-      
-                // Retrieve inference results
-                for y in ys {
-                    // bboxes
-                    if let Some(bboxes) = y.bboxes() {
-                        for bbox in bboxes {
-                            println!(
-                                "Bbox: {}, {}, {}, {}, {}, {}",
-                                bbox.xmin(),
-                                bbox.ymin(),
-                                bbox.xmax(),
-                                bbox.ymax(),
-                                bbox.confidence(),
-                                bbox.id(),
-                            );
-                        }
+    ```rust
+    use usls::{models::YOLO, Annotator, DataLoader, Nms, Options, Vision, YOLOTask, YOLOVersion};
+
+    fn main() -> anyhow::Result<()> {
+        // Build model with Options
+        let options = Options::new()
+            .with_trt(0)
+            .with_model("yolo/v8-m-dyn.onnx")?
+            .with_yolo_version(YOLOVersion::V8) // YOLOVersion: V5, V6, V7, V8, V9, V10, RTDETR
+            .with_yolo_task(YOLOTask::Detect) // YOLOTask: Classify, Detect, Pose, Segment, Obb
+            .with_ixx(0, 0, (1, 2, 4).into())
+            .with_ixx(0, 2, (0, 640, 640).into())
+            .with_ixx(0, 3, (0, 640, 640).into())
+            .with_confs(&[0.2]);
+        let mut model = YOLO::new(options)?;
+    
+        // Build DataLoader to load image(s), video, stream
+        let dl = DataLoader::new(
+            // "./assets/bus.jpg", // local image
+            // "images/bus.jpg",  // remote image
+            // "../images-folder",  // local images (from folder)
+            // "../demo.mp4",  // local video
+            // "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",  // online video
+            "rtsp://admin:kkasd1234@192.168.2.217:554/h264/ch1/",  // stream
+        )?
+        .with_batch(2)  // iterate with batch_size = 2
+        .build()?;
+    
+        // Build annotator
+        let annotator = Annotator::new()
+            .with_bboxes_thickness(4)
+            .with_saveout("YOLO-DataLoader");
+    
+        // Build viewer
+        let mut viewer = Viewer::new().with_delay(10).with_scale(1.).resizable(true);
+
+        // Run and annotate results
+        for (xs, _) in dl {
+            let ys = model.forward(&xs, false)?;
+            // annotator.annotate(&xs, &ys);
+            let images_plotted = annotator.plot(&xs, &ys, false)?;
+
+            // show image
+            viewer.imshow(&images_plotted)?;
+
+            // check out window and key event
+            if !viewer.is_open() || viewer.is_key_pressed(usls::Key::Escape) {
+                break;
+            }
+
+            // write video
+            viewer.write_batch(&images_plotted)?;
+  
+            // Retrieve inference results
+            for y in ys {
+                // bboxes
+                if let Some(bboxes) = y.bboxes() {
+                    for bbox in bboxes {
+                        println!(
+                            "Bbox: {}, {}, {}, {}, {}, {}",
+                            bbox.xmin(),
+                            bbox.ymin(),
+                            bbox.xmax(),
+                            bbox.ymax(),
+                            bbox.confidence(),
+                            bbox.id(),
+                        );
                     }
                 }
             }
-        
-            Ok(())
         }
-      ```
 
+        // finish video write
+        viewer.finish_write()?;
+    
+        Ok(())
+    }
+    ```
+    
+    </details>
+    </br>
 
 ## 📌 License
 This project is licensed under [LICENSE](LICENSE).
