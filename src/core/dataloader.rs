@@ -4,10 +4,11 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use video_rs::{
+use rsmedia::{
+    decode::Decoder,
     encode::{Encoder, Settings},
     time::Time,
-    Decoder, Url,
+    Url,
 };
 
 use crate::{
@@ -75,7 +76,7 @@ impl IntoIterator for DataLoader {
 /// A structure designed to load and manage image, video, or stream data.
 /// It handles local file paths, remote URLs, and live streams, supporting both batch processing
 /// and optional progress bar display. The structure also supports video decoding through
-/// `video_rs` for video and stream data.
+/// `rsmedia` for video and stream data.
 pub struct DataLoader {
     /// Queue of paths for images.
     paths: Option<VecDeque<PathBuf>>,
@@ -93,7 +94,7 @@ pub struct DataLoader {
     receiver: mpsc::Receiver<TempReturnType>,
 
     /// Video decoder for handling video or stream data.
-    decoder: Option<video_rs::decode::Decoder>,
+    decoder: Option<Decoder>,
 
     /// Number of images or frames; `u64::MAX` is used for live streams (indicating no limit).
     nf: u64,
@@ -150,7 +151,7 @@ impl DataLoader {
         let decoder = match &media_type {
             MediaType::Video(Location::Local) => Some(Decoder::new(source_path)?),
             MediaType::Video(Location::Remote) | MediaType::Stream => {
-                let location: video_rs::location::Location = source.parse::<Url>()?.into();
+                let location: rsmedia::location::Location = source.parse::<Url>()?.into();
                 Some(Decoder::new(location)?)
             }
             _ => None,
@@ -216,7 +217,7 @@ impl DataLoader {
         mut data: VecDeque<PathBuf>,
         batch_size: usize,
         media_type: MediaType,
-        mut decoder: Option<video_rs::decode::Decoder>,
+        mut decoder: Option<Decoder>,
     ) {
         let span = tracing::span!(tracing::Level::INFO, "DataLoader-producer-thread");
         let _guard = span.enter();

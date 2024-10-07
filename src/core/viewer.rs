@@ -1,7 +1,7 @@
 use anyhow::Result;
 use image::DynamicImage;
 use minifb::{Window, WindowOptions};
-use video_rs::{
+use rsmedia::{
     encode::{Encoder, Settings},
     time::Time,
 };
