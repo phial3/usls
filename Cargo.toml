@@ -11,37 +11,37 @@ readme = "README.md"
 exclude = ["assets/*", "examples/*", "runs/*", "benches/*"]
 
 [dependencies]
-aksr = { version = "0.0.2" }
-image = { version = "0.25.2" }
-imageproc = { version = "0.24" }
-ndarray = { version = "0.16.1", features = ["rayon"] }
-rayon = { version = "1.10.0" }
-anyhow = { version = "1.0.75" }
-regex = { version = "1.5.4" }
-rand = { version = "0.8.5" }
-chrono = { version = "0.4.30" }
-tokenizers = { version = "0.15.2" }
-log = { version = "0.4.22" }
-indicatif = "0.17.8"
+aksr = { version = "0.0" }
+image = { version = "0.25" }
+imageproc = { version = "0.25" }
+fast_image_resize = { version = "5.1", features = ["image"]}
+ndarray = { version = "0.16", features = ["rayon"] }
+rayon = { version = "1.10" }
+anyhow = { version = "1.0" }
+regex = { version = "1.11" }
+rand = { version = "0.8" }
+chrono = { version = "0.4" }
+tokenizers = { version = "0.21" }
+log = { version = "0.4" }
+indicatif = "0.17"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-ort = { version = "2.0.0-rc.9", default-features = false}
-prost = "0.12.4"
-ab_glyph = "0.2.23"
-dirs = { version = "5.0.1" }
+prost = "0.13"
+ab_glyph = "0.2"
+dirs = { version = "6.0" }
 tempfile = "3.12.0"
-geo = "0.28.0"
-half = { version = "2.3.1" }
-ureq = { version = "2.12.1", default-features = false, features = [ "tls" ] }
-fast_image_resize = { version = "4.2.1", features = ["image"]}
-natord = "1.0.9"
-rsmedia = { path = "../rsmedia", features = ["ndarray"], optional = true }
-minifb = { version = "0.27.0", optional = true }
-sha2 = "0.10.8"
+geo = "0.29"
+natord = "1.0"
+sha2 = "0.10"
+half = { version = "2.4" }
+minifb = { version = "0.27", optional = true }
+ort = { version = "2.0.0-rc.9", default-features = false}
+ureq = { version = "2.12", default-features = false, features = [ "tls" ] }
+rsmedia = { git = "https://github.com/phial3/rsmedia", branch = "main", default-features = true, optional = true }
 
 [dev-dependencies]
-argh = "0.1.13"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "chrono"] }
+argh = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 
 [[example]]
 name = "viewer"

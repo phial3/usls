@@ -2,16 +2,16 @@ use anyhow::{anyhow, Result};
 use image::DynamicImage;
 use indicatif::ProgressBar;
 use log::{info, warn};
-use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 #[cfg(feature = "ffmpeg")]
 use rsmedia::{
-    encode::{Encoder, Settings},
     decode::Decoder,
+    encode::{Encoder, Settings},
     time::Time,
     Url,
 };
+use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 
 use crate::{build_progress_bar, Hub, Location, MediaType};
 
