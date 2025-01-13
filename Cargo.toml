@@ -35,7 +35,7 @@ half = { version = "2.3.1" }
 ureq = { version = "2.12.1", default-features = false, features = [ "tls" ] }
 fast_image_resize = { version = "4.2.1", features = ["image"]}
 natord = "1.0.9"
-video-rs = { version = "0.10.0", features = ["ndarray"], optional = true }
+rsmedia = { path = "../rsmedia", features = ["ndarray"], optional = true }
 minifb = { version = "0.27.0", optional = true }
 sha2 = "0.10.8"
 
@@ -55,7 +55,7 @@ default = [
    "ort/half",
 ]
 auto = ["ort/download-binaries"]
-ffmpeg = ["dep:video-rs", "dep:minifb"]
+ffmpeg = ["dep:rsmedia", "dep:minifb"]
 cuda = [ "ort/cuda" ]
 trt = [ "ort/tensorrt" ]
 mps = [ "ort/coreml" ]
