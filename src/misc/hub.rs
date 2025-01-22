@@ -170,6 +170,7 @@ impl Hub {
     /// let default_repo_path = hub.try_fetch("v1.0.0/file").expect("Failed to fetch file");
     /// ```
     pub fn try_fetch(&mut self, s: &str) -> Result<String> {
+        println!("{:?} Fetching: {}", self, s);
         #[derive(Default, Debug, aksr::Builder)]
         struct Pack {
             // owner: String,
@@ -460,8 +461,10 @@ impl Hub {
         let cache = to.path()?.join(Self::cache_file(owner, repo));
         let is_file_expired = Self::is_file_expired(&cache, ttl)?;
         let body = if is_file_expired {
-            let gh_api_release =
-                format!("https://api.github.com/repos/{}/{}/releases", owner, repo);
+            let gh_api_release = format!(
+                "https://api.github.com/repos/{}/{}/releases?per_page=100",
+                owner, repo
+            );
             Self::fetch_and_cache_releases(&gh_api_release, &cache)?
         } else {
             std::fs::read_to_string(&cache)?
