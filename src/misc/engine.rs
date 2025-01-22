@@ -1,7 +1,7 @@
 use aksr::Builder;
 use anyhow::Result;
 use half::{bf16, f16};
-use log::{error, info, warn};
+use log::{debug, info, warn};
 use ndarray::{Array, IxDyn};
 #[allow(unused_imports)]
 use ort::{
@@ -206,6 +206,7 @@ impl Engine {
                         x, dtype,
                     )?));
                 }
+
                 xs_
             });
 
@@ -223,6 +224,7 @@ impl Engine {
                     ys.push_kv(name.as_str(), X::from(y))?;
                 }
             });
+
             Ok(ys)
         } else {
             anyhow::bail!("Failed to run with ONNXRuntime. No model info found.");
@@ -273,7 +275,7 @@ impl Engine {
         {
             match x.try_extract_tensor::<T>() {
                 Err(err) => {
-                    error!("Failed to extract from ort outputs: {:?}", err);
+                    debug!("Failed to extract from ort outputs: {:?}. A default value has been generated.", err);
                     Array::zeros(0).into_dyn()
                 }
                 Ok(x) => x.view().mapv(map_fn).into_owned(),
