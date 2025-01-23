@@ -758,6 +758,7 @@ impl Annotator {
 
     /// Load custom font
     fn load_font(path: Option<&str>) -> Result<FontArc> {
+        println!("Loading fonts from: {:?}", path);
         let path_font = match path {
             None => Hub::default().try_fetch("fonts/Arial.ttf")?,
             Some(p) => p.into(),
