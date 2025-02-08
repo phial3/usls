@@ -4,10 +4,9 @@ use indicatif::ProgressBar;
 use log::{info, warn};
 #[cfg(feature = "ffmpeg")]
 use rsmedia::{
-    decode::Decoder,
     encode::{Encoder, Settings},
     time::Time,
-    Url,
+    Decoder, Url,
 };
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
