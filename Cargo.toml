@@ -37,7 +37,7 @@ sha2 = "0.10"
 half = { version = "2.4" }
 minifb = { version = "0.28", optional = true }
 ort = { version = "2.0.0-rc.9", default-features = false}
-ureq = { version = "3.0", default-features = false}
+ureq = { version = "2.12", default-features = false, features = [ "tls" ] }
 rsmedia = { git = "https://github.com/phial3/rsmedia", branch = "main", optional = true }
 
 [dev-dependencies]
