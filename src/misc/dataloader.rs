@@ -294,12 +294,14 @@ impl DataLoader {
 
                     for frame in frames {
                         match frame {
-                            Ok((ts, frame)) => {
+                            Ok((ts, yuv_frame)) => {
+                                let rgb_frame =
+                                    rsmedia::frame::convert_ndarray_yuv_to_rgb(&yuv_frame).unwrap();
                                 let rgb8: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
                                     match image::ImageBuffer::from_raw(
                                         w as _,
                                         h as _,
-                                        frame.into_raw_vec_and_offset().0,
+                                        rgb_frame.into_raw_vec_and_offset().0,
                                     ) {
                                         Some(x) => x,
                                         None => continue,
