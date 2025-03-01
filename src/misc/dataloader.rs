@@ -3,12 +3,18 @@ use image::DynamicImage;
 use indicatif::ProgressBar;
 use log::{info, warn};
 #[cfg(feature = "ffmpeg")]
-use rsmedia::{decode::Decoder, encode::Encoder, time::Time, Url};
+use rsmedia::{
+    decode::{Decoder, DecoderBuilder},
+    encode::Encoder,
+    hwaccel::HWDeviceType,
+    time::Time,
+    Url,
+};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
-use crate::{build_progress_bar, Hub, Location, MediaType};
+use crate::{build_progress_bar, Device, Hub, Location, MediaType};
 
 type TempReturnType = (Vec<DynamicImage>, Vec<PathBuf>);
 
@@ -33,11 +39,11 @@ impl Iterator for DataLoaderIterator {
                     None => {
                         progress_bar.set_prefix("Iterated");
                         progress_bar.set_style(
-                        match indicatif::ProgressStyle::with_template(crate::PROGRESS_BAR_STYLE_FINISH_2) {
-                            Ok(x) => x,
-                            Err(err) => panic!("Failed to set style for progressbar in `DataLoaderIterator`: {}", err),
-                        },
-                    );
+                            match indicatif::ProgressStyle::with_template(crate::PROGRESS_BAR_STYLE_FINISH_2) {
+                                Ok(x) => x,
+                                Err(err) => panic!("Failed to set style for progressbar in `DataLoaderIterator`: {}", err),
+                            },
+                        );
                         progress_bar.finish();
                         None
                     }
@@ -77,6 +83,9 @@ impl IntoIterator for DataLoader {
 /// and optional progress bar display. The structure also supports video decoding through
 /// `video_rs` for video and stream data.
 pub struct DataLoader {
+    /// Source of input
+    source: String,
+
     /// Queue of paths for images.
     paths: Option<VecDeque<PathBuf>>,
 
@@ -92,9 +101,9 @@ pub struct DataLoader {
     /// Receiver for processed data.
     receiver: mpsc::Receiver<TempReturnType>,
 
-    /// Video decoder for handling video or stream data.
+    /// Video decoder or encoder for hardware acceleration.
     #[cfg(feature = "ffmpeg")]
-    decoder: Option<Decoder>,
+    device: Device,
 
     /// Number of images or frames; `u64::MAX` is used for live streams (indicating no limit).
     nf: u64,
@@ -155,55 +164,22 @@ impl DataLoader {
             anyhow::bail!("Could not locate the source path: {:?}", source_path);
         }
 
-        // video decoder
-        #[cfg(not(feature = "ffmpeg"))]
-        {
-            match &media_type {
-                MediaType::Video(Location::Local)
-                | MediaType::Video(Location::Remote)
-                | MediaType::Stream => {
-                    anyhow::bail!(
-                        "Video processing requires the features: `ffmpeg`. \
-                        \nConsider enabling them by passing, e.g., `--features ffmpeg`"
-                    );
-                }
-                _ => {}
-            };
-        }
-        #[cfg(feature = "ffmpeg")]
-        let decoder = match &media_type {
-            MediaType::Video(Location::Local) => Some(Decoder::new(source_path)?),
-            MediaType::Video(Location::Remote) | MediaType::Stream => {
-                let location: rsmedia::location::Location = source.parse::<Url>()?.into();
-                Some(Decoder::new(location)?)
-            }
-            _ => None,
-        };
-
-        // video & stream frames
-        #[cfg(feature = "ffmpeg")]
-        if let Some(decoder) = &decoder {
-            nf = match decoder.frames() {
-                Err(_) => u64::MAX,
-                Ok(0) => u64::MAX,
-                Ok(x) => x,
-            }
-        }
-
-        // summary
-        info!("Found {:?} x{}", media_type, nf);
-
         Ok(DataLoader {
+            source: source.to_string(),
             paths,
             media_type,
             bound: 50,
+            device: Device::Auto(0),
             receiver: mpsc::sync_channel(1).1,
             batch_size: 1,
-            #[cfg(feature = "ffmpeg")]
-            decoder,
             nf,
             with_pb: true,
         })
+    }
+
+    pub fn with_device(mut self, device: Device) -> Self {
+        self.device = device;
+        self
     }
 
     pub fn with_bound(mut self, x: usize) -> Self {
@@ -232,8 +208,66 @@ impl DataLoader {
         let batch_size = self.batch_size;
         let data = self.paths.take().unwrap_or_default();
         let media_type = self.media_type.clone();
+
+        // video decoder
+        #[cfg(not(feature = "ffmpeg"))]
+        {
+            match &media_type {
+                MediaType::Video(Location::Local)
+                | MediaType::Video(Location::Remote)
+                | MediaType::Stream => {
+                    anyhow::bail!(
+                        "Video processing requires the features: `ffmpeg`. \
+                        \nConsider enabling them by passing, e.g., `--features ffmpeg`"
+                    );
+                }
+                _ => {}
+            };
+        }
         #[cfg(feature = "ffmpeg")]
-        let decoder = self.decoder.take();
+        let decoder = match &media_type {
+            MediaType::Video(loc) => {
+                let location = match loc {
+                    Location::Local => rsmedia::Location::from(Path::new(&self.source)),
+                    Location::Remote => rsmedia::Location::from(Url::parse(&self.source)?),
+                };
+                // TODO: only support cuda for now
+                let hw_device_opt = match self.device {
+                    Device::Cuda(n) => Some((HWDeviceType::CUDA, n)),
+                    _ => None,
+                };
+                let builder = DecoderBuilder::new(location);
+                if let Some((hw_device_type, hw_device_id)) = hw_device_opt {
+                    info!(
+                        "decoder using hardware acceleration device: {:?}, id: {}",
+                        hw_device_type, hw_device_id
+                    );
+                    // TODO: only support cuda cuvid decoder for now
+                    let decoder = builder
+                        .with_codec_name("h264_cuvid".to_string())
+                        .with_hardware_device(hw_device_type)
+                        .with_options(rsmedia::options::Options::preset_h264_nvenc())
+                        .build()?;
+                    Some(decoder)
+                } else {
+                    Some(builder.build()?)
+                }
+            }
+            _ => None,
+        };
+
+        // video & stream frames
+        #[cfg(feature = "ffmpeg")]
+        if let Some(decoder) = &decoder {
+            self.nf = match decoder.frames() {
+                Err(_) => u64::MAX,
+                Ok(0) => u64::MAX,
+                Ok(x) => x,
+            }
+        }
+
+        // summary
+        info!("Found {:?} x{}", media_type, self.nf);
 
         // Spawn the producer thread
         std::thread::spawn(move || {
