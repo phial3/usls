@@ -2,15 +2,11 @@ use anyhow::{anyhow, Result};
 use image::DynamicImage;
 use indicatif::ProgressBar;
 use log::{info, warn};
+#[cfg(feature = "ffmpeg")]
+use rsmedia::{decode::Decoder, encode::Encoder, time::Time, Url};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-#[cfg(feature = "ffmpeg")]
-use video_rs::{
-    encode::{Encoder, Settings},
-    time::Time,
-    Decoder, Url,
-};
 
 use crate::{build_progress_bar, Hub, Location, MediaType};
 
@@ -98,7 +94,7 @@ pub struct DataLoader {
 
     /// Video decoder for handling video or stream data.
     #[cfg(feature = "ffmpeg")]
-    decoder: Option<video_rs::decode::Decoder>,
+    decoder: Option<Decoder>,
 
     /// Number of images or frames; `u64::MAX` is used for live streams (indicating no limit).
     nf: u64,
@@ -178,7 +174,7 @@ impl DataLoader {
         let decoder = match &media_type {
             MediaType::Video(Location::Local) => Some(Decoder::new(source_path)?),
             MediaType::Video(Location::Remote) | MediaType::Stream => {
-                let location: video_rs::location::Location = source.parse::<Url>()?.into();
+                let location: rsmedia::location::Location = source.parse::<Url>()?.into();
                 Some(Decoder::new(location)?)
             }
             _ => None,
@@ -259,7 +255,7 @@ impl DataLoader {
         mut data: VecDeque<PathBuf>,
         batch_size: usize,
         media_type: MediaType,
-        #[cfg(feature = "ffmpeg")] mut decoder: Option<video_rs::decode::Decoder>,
+        #[cfg(feature = "ffmpeg")] mut decoder: Option<Decoder>,
     ) {
         let mut yis: Vec<DynamicImage> = Vec::with_capacity(batch_size);
         let mut yps: Vec<PathBuf> = Vec::with_capacity(batch_size);
@@ -294,12 +290,14 @@ impl DataLoader {
 
                     for frame in frames {
                         match frame {
-                            Ok((ts, frame)) => {
+                            Ok((ts, yuv_frame)) => {
+                                let rgb_frame =
+                                    rsmedia::frame::convert_ndarray_yuv_to_rgb(&yuv_frame).unwrap();
                                 let rgb8: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
                                     match image::ImageBuffer::from_raw(
                                         w as _,
                                         h as _,
-                                        frame.into_raw_vec_and_offset().0,
+                                        rgb_frame.into_raw_vec_and_offset().0,
                                     ) {
                                         Some(x) => x,
                                         None => continue,
@@ -442,8 +440,7 @@ impl DataLoader {
 
             // build encoder at the 1st time
             if encoder.is_none() {
-                let settings = Settings::preset_h264_yuv420p(w as _, h as _, false);
-                encoder = Some(Encoder::new(saveout.clone(), settings)?);
+                encoder = Some(Encoder::new(saveout.clone(), w, h)?);
             }
 
             // write video

@@ -2,10 +2,7 @@ use anyhow::Result;
 use image::DynamicImage;
 use log::info;
 use minifb::{Window, WindowOptions};
-use video_rs::{
-    encode::{Encoder, Settings},
-    time::Time,
-};
+use rsmedia::{encode::Encoder, time::Time};
 
 pub struct Viewer<'a> {
     name: &'a str,
@@ -105,11 +102,10 @@ impl Viewer<'_> {
         let frame = frame.to_rgb8();
         let (w, h) = frame.dimensions();
         if self.writer.is_none() {
-            let settings = Settings::preset_h264_yuv420p(w as _, h as _, false);
             let saveout =
                 crate::Dir::saveout(&["runs"])?.join(format!("{}.mp4", crate::string_now("-")));
             info!("Video will be save to: {:?}", saveout);
-            self.writer = Some(Encoder::new(saveout, settings)?);
+            self.writer = Some(Encoder::new(saveout, w, h)?);
         }
 
         // write video
