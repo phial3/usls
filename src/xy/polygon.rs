@@ -91,7 +91,7 @@ impl Polygon {
 
     pub fn perimeter(&self) -> f64 {
         // use the `line.length::<Euclidean>()` via the `Length` trait instead.
-        self.polygon.exterior().length::<Euclidean>()
+        Euclidean.length(self.polygon.exterior())
     }
 
     pub fn area(&self) -> f64 {

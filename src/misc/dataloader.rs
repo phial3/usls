@@ -1,14 +1,16 @@
+use crate::{build_progress_bar, Hub, Location, MediaType};
 use anyhow::{anyhow, Result};
 use image::DynamicImage;
 use indicatif::ProgressBar;
 use log::{info, warn};
 #[cfg(feature = "ffmpeg")]
-use rsmedia::{decode::Decoder, encode::Encoder, time::Time, Url};
+use rsmedia::{
+    decode::DecoderWrapper, encode::EncoderBuilder, DecoderBuilder, MediaFrame, PixelFormat,
+    StreamReader, Time, Url,
+};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-
-use crate::{build_progress_bar, Hub, Location, MediaType};
 
 type TempReturnType = (Vec<DynamicImage>, Vec<PathBuf>);
 
@@ -94,7 +96,7 @@ pub struct DataLoader {
 
     /// Video decoder for handling video or stream data.
     #[cfg(feature = "ffmpeg")]
-    decoder: Option<Decoder>,
+    decoder: Option<DecoderWrapper<StreamReader>>,
 
     /// Number of images or frames; `u64::MAX` is used for live streams (indicating no limit).
     nf: u64,
@@ -171,23 +173,20 @@ impl DataLoader {
             };
         }
         #[cfg(feature = "ffmpeg")]
-        let decoder = match &media_type {
-            MediaType::Video(Location::Local) => Some(Decoder::new(source_path)?),
-            MediaType::Video(Location::Remote) | MediaType::Stream => {
-                let location: rsmedia::location::Location = source.parse::<Url>()?.into();
-                Some(Decoder::new(location)?)
-            }
-            _ => None,
+        let mut decoder = {
+            let reader_path: rsmedia::Location = match &media_type {
+                MediaType::Video(Location::Remote) | MediaType::Stream => {
+                    source.parse::<Url>()?.into()
+                }
+                _ => source_path.into(),
+            };
+            Some(DecoderBuilder::new_video().build_wrapped(reader_path)?)
         };
 
         // video & stream frames
         #[cfg(feature = "ffmpeg")]
-        if let Some(decoder) = &decoder {
-            nf = match decoder.frames() {
-                Err(_) => u64::MAX,
-                Ok(0) => u64::MAX,
-                Ok(x) => x,
-            }
+        if let Some(decoder) = decoder.as_mut() {
+            nf = decoder.decoder_mut().frames() as u64;
         }
 
         // summary
@@ -255,7 +254,7 @@ impl DataLoader {
         mut data: VecDeque<PathBuf>,
         batch_size: usize,
         media_type: MediaType,
-        #[cfg(feature = "ffmpeg")] mut decoder: Option<Decoder>,
+        #[cfg(feature = "ffmpeg")] mut decoder: Option<DecoderWrapper<StreamReader>>,
     ) {
         let mut yis: Vec<DynamicImage> = Vec::with_capacity(batch_size);
         let mut yps: Vec<PathBuf> = Vec::with_capacity(batch_size);
@@ -285,36 +284,27 @@ impl DataLoader {
             #[cfg(feature = "ffmpeg")]
             MediaType::Video(_) | MediaType::Stream => {
                 if let Some(decoder) = decoder.as_mut() {
-                    let (w, h) = decoder.size();
-                    let frames = decoder.decode_iter();
+                    while let Some(yuv_frame) = decoder.decode::<u8>().unwrap() {
+                        let rgb_frame = yuv_frame.convert_yuv_to_rgb().unwrap();
+                        let rgb8: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
+                            match image::ImageBuffer::from_vec(
+                                rgb_frame.width as u32,
+                                rgb_frame.height as u32,
+                                rgb_frame.data.into_raw_vec_and_offset().0,
+                            ) {
+                                Some(x) => x,
+                                None => continue,
+                            };
+                        let img = image::DynamicImage::from(rgb8);
+                        yis.push(img);
+                        yps.push(rgb_frame.pts.to_string().into());
 
-                    for frame in frames {
-                        match frame {
-                            Ok((ts, yuv_frame)) => {
-                                let rgb_frame =
-                                    rsmedia::frame::convert_ndarray_yuv_to_rgb(&yuv_frame).unwrap();
-                                let rgb8: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
-                                    match image::ImageBuffer::from_raw(
-                                        w as _,
-                                        h as _,
-                                        rgb_frame.into_raw_vec_and_offset().0,
-                                    ) {
-                                        Some(x) => x,
-                                        None => continue,
-                                    };
-                                let img = image::DynamicImage::from(rgb8);
-                                yis.push(img);
-                                yps.push(ts.to_string().into());
-
-                                if yis.len() == batch_size
-                                    && sender
-                                        .send((std::mem::take(&mut yis), std::mem::take(&mut yps)))
-                                        .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            Err(_) => break,
+                        if yis.len() == batch_size
+                            && sender
+                                .send((std::mem::take(&mut yis), std::mem::take(&mut yps)))
+                                .is_err()
+                        {
+                            break;
                         }
                     }
                 }
@@ -440,17 +430,30 @@ impl DataLoader {
 
             // build encoder at the 1st time
             if encoder.is_none() {
-                encoder = Some(Encoder::new(saveout.clone(), w, h)?);
+                encoder = Some(
+                    EncoderBuilder::new_video(w as usize, h as usize)
+                        .build_wrapped(saveout.clone())?,
+                );
             }
 
             // write video
             if let Some(encoder) = encoder.as_mut() {
-                let raw_data = img.into_raw();
-                let frame = ndarray::Array3::from_shape_vec((h as usize, w as usize, 3), raw_data)
-                    .expect("Failed to create ndarray from raw image data");
+                let rgb_data = img.into_raw();
+                let frame_array =
+                    ndarray::Array3::from_shape_vec((h as usize, w as usize, 3), rgb_data)
+                        .expect("Failed to create ndarray from raw image data");
+
+                let mut frame = MediaFrame::new_video(
+                    w as usize,
+                    h as usize,
+                    PixelFormat::RGB24,
+                    encoder.time_base(),
+                    frame_array,
+                )?;
+                frame.set_pts(position.into_value().unwrap());
 
                 // encode and update
-                encoder.encode(&frame, position)?;
+                encoder.encode(frame)?;
                 position = position.aligned_with(Time::from_nth_of_a_second(fps)).add();
             }
         }

@@ -2,7 +2,9 @@ use anyhow::Result;
 use image::DynamicImage;
 use log::info;
 use minifb::{Window, WindowOptions};
-use rsmedia::{encode::Encoder, time::Time};
+use rsmedia::{
+    encode::EncoderWrapper, time::Time, EncoderBuilder, MediaFrame, PixelFormat, StreamWriter,
+};
 
 pub struct Viewer<'a> {
     name: &'a str,
@@ -11,7 +13,7 @@ pub struct Viewer<'a> {
     window_resizable: bool,
     fps_poll: usize,
     fps: usize,
-    writer: Option<Encoder>,
+    writer: Option<EncoderWrapper<StreamWriter>>,
     position: Time,
 }
 
@@ -105,16 +107,27 @@ impl Viewer<'_> {
             let saveout =
                 crate::Dir::saveout(&["runs"])?.join(format!("{}.mp4", crate::string_now("-")));
             info!("Video will be save to: {:?}", saveout);
-            self.writer = Some(Encoder::new(saveout, w, h)?);
+            self.writer =
+                Some(EncoderBuilder::new_video(w as usize, h as usize).build_wrapped(saveout)?);
         }
 
         // write video
         if let Some(writer) = self.writer.as_mut() {
             let raw_data = frame.to_vec();
-            let frame = ndarray::Array3::from_shape_vec((h as usize, w as usize, 3), raw_data)?;
+            let frame_array =
+                ndarray::Array3::from_shape_vec((h as usize, w as usize, 3), raw_data)?;
+            let mut frame = MediaFrame::new_video(
+                w as usize,
+                h as usize,
+                PixelFormat::RGB24,
+                writer.time_base(),
+                frame_array,
+            )?;
+            frame.set_pts(self.position.into_value().unwrap());
 
             // encode and update
-            writer.encode(&frame, self.position)?;
+            writer.encode(frame)?;
+
             self.position = self
                 .position
                 .aligned_with(Time::from_nth_of_a_second(self.fps))
