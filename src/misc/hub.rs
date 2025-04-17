@@ -197,8 +197,9 @@ impl Hub {
 
             pack = pack.with_url(s).with_tag(&tag_).with_file_name(&file_name_);
             if let Some(n) = retry!(self.max_attempts, Self::fetch_get_response(s))?
-                .header("Content-Length")
-                .and_then(|s| s.parse::<u64>().ok())
+                .headers()
+                .get("Content-Length")
+                .and_then(|s| s.to_str().unwrap().parse::<u64>().ok())
             {
                 pack = pack.with_file_size(n);
             }
@@ -315,7 +316,8 @@ impl Hub {
     fn fetch_and_cache_releases(url: &str, cache_path: &Path) -> Result<String> {
         let response = retry!(3, Self::fetch_get_response(url))?;
         let body = response
-            .into_string()
+            .into_body()
+            .read_to_string()
             .context("Failed to read response body")?;
 
         // Ensure cache directory exists
@@ -392,8 +394,9 @@ impl Hub {
     ) -> Result<()> {
         let resp = Self::fetch_get_response(src)?;
         let ntotal = resp
-            .header("Content-Length")
-            .and_then(|s| s.parse::<u64>().ok())
+            .headers()
+            .get("Content-Length")
+            .and_then(|s| s.to_str().unwrap().parse::<u64>().ok())
             .context("Content-Length header is missing or invalid")?;
 
         let pb = ProgressBar::new(ntotal);
@@ -406,7 +409,7 @@ impl Hub {
         pb.set_prefix(format!("{:>PREFIX_LENGTH$}", "Fetching"));
         pb.set_message(message.unwrap_or_default().to_string());
 
-        let mut reader = resp.into_reader();
+        let mut reader = resp.into_body().into_reader();
         let mut buffer = [0; 512];
         let mut downloaded_bytes = 0usize;
         let mut file = std::fs::File::create(&dst)
@@ -438,7 +441,7 @@ impl Hub {
         Ok(())
     }
 
-    fn fetch_get_response(url: &str) -> anyhow::Result<ureq::Response> {
+    fn fetch_get_response(url: &str) -> anyhow::Result<ureq::http::response::Response<ureq::Body>> {
         let response = ureq::get(url)
             .call()
             .map_err(|err| anyhow::anyhow!("Failed to GET response from {}: {}", url, err))?;
