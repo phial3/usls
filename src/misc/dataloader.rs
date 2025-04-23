@@ -180,7 +180,7 @@ impl DataLoader {
                 }
                 _ => source_path.into(),
             };
-            Some(DecoderBuilder::new_video().build_wrapped(reader_path)?)
+            Some(DecoderBuilder::new(rsmedia::MediaType::VIDEO).build_wrapped(reader_path)?)
         };
 
         // video & stream frames
